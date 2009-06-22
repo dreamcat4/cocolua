@@ -12,7 +12,13 @@
 @implementation MyController
 
 - (IBAction)doItButtonClicked:(id)sender {
-	[textView setString:@"Hello, dear world!"];
+	NSBundle * bundle = [NSBundle bundleForClass:[MyController class]];
+	NSString * scriptPath = [bundle pathForResource:@"script" ofType:@"lua"];
+	if (!scriptPath) {
+		[textView setString:@"Failed to get script's path."];
+		return;
+	}
+	[textView setString:scriptPath];
 }
 
 @end

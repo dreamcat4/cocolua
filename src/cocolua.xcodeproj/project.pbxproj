@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1DDD58160DA1D0A300B32029 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1DDD58140DA1D0A300B32029 /* MainMenu.xib */; };
 		5C47B7740FEFF525006A0B72 /* MyController.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7730FEFF525006A0B72 /* MyController.m */; };
+		5C47B7BA0FEFF9A3006A0B72 /* script.lua in Resources */ = {isa = PBXBuildFile; fileRef = 5C47B7970FEFF8B6006A0B72 /* script.lua */; };
 		8D11072B0486CEB800E47090 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C165CFE840E0CC02AAC07 /* InfoPlist.strings */; };
 		8D11072D0486CEB800E47090 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; settings = {ATTRIBUTES = (); }; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
@@ -25,6 +26,7 @@
 		32CA4F630368D1EE00C91783 /* cocolua_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = cocolua_Prefix.pch; sourceTree = "<group>"; };
 		5C47B7720FEFF525006A0B72 /* MyController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MyController.h; sourceTree = "<group>"; };
 		5C47B7730FEFF525006A0B72 /* MyController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MyController.m; sourceTree = "<group>"; };
+		5C47B7970FEFF8B6006A0B72 /* script.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = script.lua; sourceTree = "<group>"; };
 		8D1107310486CEB800E47090 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8D1107320486CEB800E47090 /* cocolua.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cocolua.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -103,6 +105,7 @@
 				8D1107310486CEB800E47090 /* Info.plist */,
 				089C165CFE840E0CC02AAC07 /* InfoPlist.strings */,
 				1DDD58140DA1D0A300B32029 /* MainMenu.xib */,
+				5C47B7970FEFF8B6006A0B72 /* script.lua */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -159,6 +162,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5C47B7BA0FEFF9A3006A0B72 /* script.lua in Resources */,
 				8D11072B0486CEB800E47090 /* InfoPlist.strings in Resources */,
 				1DDD58160DA1D0A300B32029 /* MainMenu.xib in Resources */,
 			);
