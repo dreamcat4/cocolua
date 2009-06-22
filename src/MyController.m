@@ -7,6 +7,13 @@
 //
 
 #import "MyController.h"
+#import "LuaObjCBridge.h"
+
+@interface MyController ()
+
+- (NSString*)runScript:(NSString*)scriptPath withArgument:(NSString*)data;
+
+@end
 
 
 @implementation MyController
@@ -18,7 +25,55 @@
 		[textView setString:@"Failed to get script's path."];
 		return;
 	}
-	[textView setString:scriptPath];
+	[textView setString:[self runScript:scriptPath withArgument:[textView string]]];
+}
+
+- (NSString*)runScript:(NSString*)scriptPath withArgument:(NSString*)data {
+	NSString * result = nil;
+	
+	// Set up a Lua interpreter
+	lua_State* interpreter;
+	interpreter=lua_objc_init(); // interpreter is now available for all lua_* function calls.
+	
+	// Pass input parameters into Lua
+	lua_objc_pushpropertylist( interpreter, data );
+	lua_setglobal( interpreter, "argument" );        // This will be the name in Lua
+	
+	// Use Lua to run a script
+	luaL_dofile( interpreter, [ scriptPath UTF8String ] );
+	
+	// Get the error status
+	char *luaError = (char *)lua_tostring(interpreter, -1);
+	
+	if( luaError != NULL )
+	{
+		// Error has occured so return the information
+		result = [ NSString stringWithCString: luaError ];
+	}
+	else
+	{
+		// No error so get the return values
+		lua_getglobal( interpreter, "result" );   // Name in Lua
+		
+		// Check that the return value is an NSString or derived class
+		if( [ lua_objc_topropertylist( interpreter, 1 ) isKindOfClass: [ NSString class ] ] )
+		{
+			// Copy the string here because the original will be lost when the Lua
+			// interpreter instance is closed
+			result = [ lua_objc_topropertylist( interpreter, 1 ) 
+					  mutableCopyWithZone: nil ];
+		}
+		else
+		{
+			// Display an error message
+			result = @"Invalid class type returned";
+		}
+	}
+	
+	//Stop the Lua interpreter
+	lua_close(interpreter);                    
+	
+	return result;
 }
 
 @end

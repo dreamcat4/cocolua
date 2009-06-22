@@ -1,0 +1,1 @@
+result = string.format("argument = %s", argument)
