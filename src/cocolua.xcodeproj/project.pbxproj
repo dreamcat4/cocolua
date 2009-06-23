@@ -10,7 +10,6 @@
 		1DDD58160DA1D0A300B32029 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1DDD58140DA1D0A300B32029 /* MainMenu.xib */; };
 		5C47B7740FEFF525006A0B72 /* MyController.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7730FEFF525006A0B72 /* MyController.m */; };
 		5C47B7BA0FEFF9A3006A0B72 /* script.lua in Resources */ = {isa = PBXBuildFile; fileRef = 5C47B7970FEFF8B6006A0B72 /* script.lua */; };
-		5C47B7CD0FEFFA10006A0B72 /* LuaObjCBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7CC0FEFFA10006A0B72 /* LuaObjCBridge.m */; };
 		5C47B8040FEFFA72006A0B72 /* lapi.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7CF0FEFFA72006A0B72 /* lapi.c */; };
 		5C47B8050FEFFA72006A0B72 /* lauxlib.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7D10FEFFA72006A0B72 /* lauxlib.c */; };
 		5C47B8060FEFFA72006A0B72 /* lbaselib.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7D30FEFFA72006A0B72 /* lbaselib.c */; };
@@ -41,6 +40,7 @@
 		5C47B81F0FEFFA72006A0B72 /* lvm.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B7FF0FEFFA72006A0B72 /* lvm.c */; };
 		5C47B8200FEFFA72006A0B72 /* lzio.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B8010FEFFA72006A0B72 /* lzio.c */; };
 		5C47B8210FEFFA72006A0B72 /* print.c in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B8030FEFFA72006A0B72 /* print.c */; };
+		5C47B9A60FF08ABB006A0B72 /* LuaObjCBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C47B9A50FF08ABB006A0B72 /* LuaObjCBridge.m */; };
 		8D11072B0486CEB800E47090 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C165CFE840E0CC02AAC07 /* InfoPlist.strings */; };
 		8D11072D0486CEB800E47090 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; settings = {ATTRIBUTES = (); }; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
@@ -58,8 +58,6 @@
 		5C47B7720FEFF525006A0B72 /* MyController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MyController.h; sourceTree = "<group>"; };
 		5C47B7730FEFF525006A0B72 /* MyController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MyController.m; sourceTree = "<group>"; };
 		5C47B7970FEFF8B6006A0B72 /* script.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = script.lua; sourceTree = "<group>"; };
-		5C47B7CB0FEFFA10006A0B72 /* LuaObjCBridge.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LuaObjCBridge.h; sourceTree = "<group>"; };
-		5C47B7CC0FEFFA10006A0B72 /* LuaObjCBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = LuaObjCBridge.m; sourceTree = "<group>"; };
 		5C47B7CF0FEFFA72006A0B72 /* lapi.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = lapi.c; sourceTree = "<group>"; };
 		5C47B7D00FEFFA72006A0B72 /* lapi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = lapi.h; sourceTree = "<group>"; };
 		5C47B7D10FEFFA72006A0B72 /* lauxlib.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = lauxlib.c; sourceTree = "<group>"; };
@@ -113,6 +111,8 @@
 		5C47B8010FEFFA72006A0B72 /* lzio.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = lzio.c; sourceTree = "<group>"; };
 		5C47B8020FEFFA72006A0B72 /* lzio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = lzio.h; sourceTree = "<group>"; };
 		5C47B8030FEFFA72006A0B72 /* print.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = print.c; sourceTree = "<group>"; };
+		5C47B9A50FF08ABB006A0B72 /* LuaObjCBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = LuaObjCBridge.m; sourceTree = "<group>"; };
+		5C47B9A70FF08ADB006A0B72 /* LuaObjCBridge.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LuaObjCBridge.h; sourceTree = "<group>"; };
 		8D1107310486CEB800E47090 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8D1107320486CEB800E47090 /* cocolua.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cocolua.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -132,9 +132,9 @@
 		080E96DDFE201D6D7F000001 /* Classes */ = {
 			isa = PBXGroup;
 			children = (
+				5C47B9A70FF08ADB006A0B72 /* LuaObjCBridge.h */,
+				5C47B9A50FF08ABB006A0B72 /* LuaObjCBridge.m */,
 				5C47B7CE0FEFFA13006A0B72 /* lua */,
-				5C47B7CB0FEFFA10006A0B72 /* LuaObjCBridge.h */,
-				5C47B7CC0FEFFA10006A0B72 /* LuaObjCBridge.m */,
 				5C47B7720FEFF525006A0B72 /* MyController.h */,
 				5C47B7730FEFF525006A0B72 /* MyController.m */,
 			);
@@ -326,7 +326,6 @@
 			files = (
 				8D11072D0486CEB800E47090 /* main.m in Sources */,
 				5C47B7740FEFF525006A0B72 /* MyController.m in Sources */,
-				5C47B7CD0FEFFA10006A0B72 /* LuaObjCBridge.m in Sources */,
 				5C47B8040FEFFA72006A0B72 /* lapi.c in Sources */,
 				5C47B8050FEFFA72006A0B72 /* lauxlib.c in Sources */,
 				5C47B8060FEFFA72006A0B72 /* lbaselib.c in Sources */,
@@ -357,6 +356,7 @@
 				5C47B81F0FEFFA72006A0B72 /* lvm.c in Sources */,
 				5C47B8200FEFFA72006A0B72 /* lzio.c in Sources */,
 				5C47B8210FEFFA72006A0B72 /* print.c in Sources */,
+				5C47B9A60FF08ABB006A0B72 /* LuaObjCBridge.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

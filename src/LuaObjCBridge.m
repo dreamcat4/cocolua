@@ -58,9 +58,49 @@
 //
 	
 #if LUA_OBJC_LUA_DEPLOYMENT_TARGET>=LUA_OBJC_LUA_VERSION_5_1_0
+	// Notes: LUA_OBJC_EACH_LUA_TYPE_HAS_METATABLE and
+	// LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES did not work 
+	// correctly prior to my changes.
+	// The METATABLE seemed to have serious problems under garbage collection.
+	// The RETAIN_AND_RELEASE option didn't work at all because the code
+	// used regular tables and not userdata so the __gc metamethod is never called.
+	// My changes modify the system to use userdata and are also designed to work
+	// with garbage collection. However, LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
+	// does not seem to work without LUA_OBJC_EACH_LUA_TYPE_HAS_METATABLE being defined.
+	// So generally speaking, you should define both if things are going to work 
+	// correctly or use none at all.
 	#define LUA_OBJC_EACH_LUA_TYPE_HAS_METATABLE
 	#define LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
+	// This is a new one by me. It requires LUA_OBJC_EACH_LUA_TYPE_HAS_METATABLE
+	// and LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES.
+	// When enabled, this will rely on Lua to automatically clean up NSObjects that
+	// are created on the Lua-side. (Simplisticly, this is automatic memory management.)
+	// It basically works by leveraging LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES,
+	// and adding a special case for alloc, allocWithZone:, copy, copyWithZone:, mutableCopy, mutableCopyWithZone, new
+	// so that their reference is not incremented.
+	// Without this option, these methods would increase the reference count by one. 
+	// But the LuaObjCBridge also CFRetains the object which increases the reference count again.
+	// When the object dies on the Lua side, the object still has a positive reference count.
+	// What was needed is that the user manually release or autorelease the object just like Obj-C.
+	// But if this option is enabled, then the scripter need not call release/autorelease on 
+	// objects in the normal, simplistic case.
+	// But this also means a scripter MUST NOT call release or autorelease on an object if this is enabled,
+	// unless the user really knows what they are doing. Release remains meaningful and will change 
+	// the retainCount.
+	#define LUA_OBJC_DECREMENT_ON_ALLOC_OR_COPY_TO_RELY_ON_LUA_GC
+
+	// This is another new one be me. It uses full userdata instead of light userdata for pointer types.
+	// The advantage of this is that you can attach metatables to full userdata unlike light userdata.
+	// I use this with the CFTypeRef metatable I wrote for Core Foundation types. 
+	// The most important aspect of that metatable is it has a __gc metamethod which will call CFRelease.
+	// Without that, you must manually manage the memory of CF types that cross the bridge.
+	// (The above LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES does not handle CFTypes, just Obj-C.)
+	// If you wrote any C code that referenced data directly from the old light user data, this new switch
+	// will probably break things for you. If you use any of the extra bindings I wrote for LuaCore which
+	// are loaded with metatables (but Gus's original methods are not), then you probably want this switch.
+	#define LUA_OBJC_USE_FULLUSERDATA_FOR_POINTER_TYPES
 #endif
+#define LUA_OBJC_USE_RUNTIME_INSTEAD_OF_FOUNDATION
 	
 //
 // Portability Configuration
@@ -79,7 +119,6 @@
 // the bridge is unable to identify that it is being compiled against the NeXT
 // runtime.
 //
-
 #if defined(__NEXT_RUNTIME__)
 	#import <objc/objc-runtime.h>
 	#ifdef LUA_OBJC_USE_RUNTIME_INSTEAD_OF_FOUNDATION
@@ -95,6 +134,7 @@
 				#error Compiling LuaObjCBridge for Intel Macs requires header files from MacOSX 10.3 or greater.
 			#else		
 				#warning LuaObjCBridge is not fully tested for use on Intel chips.
+				#define LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY // Use this or the code was crashing for me for structs LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY_LIMIT 
 				#define LUA_OBJC_METHODCALL_USE_OBJC_MSGSENDV_FPRET
 				#define LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY_LIMIT 8
 				#define LUA_OBJC_INTEL_ALIGNMENT
@@ -166,6 +206,13 @@
 #define LUA_OBJC_TYPE_CONST 'r'
 #define LUA_OBJC_TYPE_BYREF 'R'
 #define LUA_OBJC_TYPE_ONEWAY 'V'
+
+
+typedef struct LuaUserDataContainer
+{
+	id theObject;
+} LuaUserDataContainer;
+
 	
 //
 // Initialisation
@@ -180,6 +227,7 @@
 
 const luaL_reg lua_objc_functions[]={
 	{"class",lua_objc_lookup_class},
+	{"isObject",lua_objc_isObject},
 	{NULL,NULL},
 	};
 	
@@ -241,15 +289,15 @@ lua_State* lua_objc_init(){
 		//
 		
 		lua_pushstring(state,"");
-		lua_objc_configuremetatable(state,-1,YES);
+		lua_objc_configuremetatable(state,-1);
 		lua_pop(state,1);
 		
 		lua_pushnumber(state,0);
-		lua_objc_configuremetatable(state,-1,YES);
+		lua_objc_configuremetatable(state,-1);
 		lua_pop(state,1);
 		
 		lua_pushboolean(state,0);
-		lua_objc_configuremetatable(state,-1, YES);
+		lua_objc_configuremetatable(state,-1);
 		lua_pop(state,1);
 #endif
 		}
@@ -279,16 +327,96 @@ int lua_objc_lookup_class(lua_State* state){
 // Initialises the Lua library. Useful if you want to initialise your own Lua 
 // interpreter.
 //
-	
-int lua_objc_open(lua_State* state){
+
+
+
+int lua_objc_open(lua_State* L){
 #if LUA_OBJC_LUA_DEPLOYMENT_TARGET>=LUA_OBJC_LUA_VERSION_5_1_0
-	luaL_register(state,lua_tostring(state,-1),lua_objc_functions);
+	luaL_register(L,lua_tostring(L,-1),lua_objc_functions);
 #else
-	luaL_openlib(state,LUA_OBJC_LIBRARY_NAME,lua_objc_functions,0);
+	luaL_openlib(L,LUA_OBJC_LIBRARY_NAME,lua_objc_functions,0);
 #endif
+
 	return 0;
 	}
 	
+int luaopen_objc(lua_State* the_state)
+{
+	luaL_register(the_state,lua_tostring(the_state,-1),lua_objc_functions);
+	return 1;
+}
+
+
+// This code isn't working right.It is being called more often than I expect
+// and I frequently get NULL as the object.
+#if 0
+static int lua_objc_tostring(lua_State *L)
+{
+NSLog(@"lua_objc_tostring");
+	int stack_index = lua_gettop(L);
+	if(stack_index<0){
+		stack_index=lua_gettop(L)+(stack_index+1);
+	}
+	id the_object = lua_objc_getid(L, stack_index);
+	
+	if(NULL == the_object)
+	{
+		//lua_pushstring(L, "No object");
+		lua_pushstring(L, "");
+		return 1;
+	}
+	if([the_object isKindOfClass:[NSString class]])
+	{
+		lua_pushstring(L, [the_object UTF8String]);
+		return 1;
+	}
+	else if([the_object isKindOfClass:[NSNumber class]])
+	{
+		lua_pushstring(L, [[the_object stringValue] UTF8String]);
+		return 1;
+	}
+	else if([the_object respondsToSelector:@selector(description)])
+	{
+		lua_pushstring(L, [[the_object description] UTF8String]);
+		return 1;
+	}
+	lua_pushstring(L, "No description");
+	
+	return 1;
+}
+#endif
+
+//
+// Releases the Objective-C object associated with a Lua value. This is called
+// automatically by Lua when the associated value is garbage-collected.
+// Objective-C objects are only retained if they are instances (i.e. class
+// objects are not retained), and only if the bridge has been compiled with
+// LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES #defined. In this case, instances
+// will be retained every time they are associated with a Lua value using
+// lua_objc_setid(), lua_objc_pushid() or lua_objc_pushpropertylist().
+//
+
+#ifdef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
+static int lua_objc_release(lua_State *L)
+{
+	
+	LuaUserDataContainer* lua_proxy_object = (LuaUserDataContainer*)lua_touserdata(L, -1);
+	// Note: This must be a CFRelease() and not an [object release] because of
+	// Obj-C 2.0 optional garbage collection.
+//	NSLog(@"lua_objc_release (count=%d), releasing new userdata/object: %@", [lua_proxy_object->theObject retainCount], lua_proxy_object->theObject);
+	if([lua_proxy_object->theObject respondsToSelector:@selector(release)])
+	{
+		CFRelease(lua_proxy_object->theObject);
+	}
+	else
+	{
+		NSLog(@"Warning in lua_objc_release: object doesn't respond to release: %@", lua_proxy_object->theObject);
+	}
+	lua_proxy_object->theObject = nil;
+	return 0;
+}
+#endif
+
 //
 // Instance Passing
 //
@@ -299,7 +427,7 @@ int lua_objc_open(lua_State* state){
 // Sets various callbacks in the metatable for the value at stack_index.
 //
 
-void lua_objc_configuremetatable(lua_State* state, int stack_index,int hook_gc_events){
+void lua_objc_configuremetatable(lua_State* state, int stack_index){
 	if(stack_index<0){
 		stack_index=lua_gettop(state)+(stack_index+1);
 		}
@@ -315,16 +443,19 @@ void lua_objc_configuremetatable(lua_State* state, int stack_index,int hook_gc_e
 		lua_pushcfunction(state,&lua_objc_methodlookup);
 		lua_settable(state,metatable);
 		
+#if 0 // This isn't working right
+		lua_pushstring(state,"__tostring");
+		lua_pushcfunction(state,&lua_objc_tostring);
+		lua_settable(state,metatable);
+#endif		
+
 		//
 		// Set hook to intercept garbage collection events
 		//
-		
 #ifdef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
-		if(hook_gc_events){
-			lua_pushstring(state,"__gc");
-			lua_pushcfunction(state,&lua_objc_release);
-			lua_settable(state,metatable);
-			}
+		lua_pushstring(state,"__gc");
+		lua_pushcfunction(state,&lua_objc_release);
+		lua_settable(state,metatable);
 #endif		
 		lua_pop(state,1);
 		}
@@ -431,6 +562,11 @@ id lua_objc_getid(lua_State* state,int stack_index){
 int lua_objc_isid(lua_State* state,int stack_index){
 	return (lua_objc_getid(state,stack_index)!=nil);
 	}
+
+int lua_objc_isObject(lua_State* state)
+{
+	return (lua_objc_isid(state,-1));
+}
 	
 //
 // Passes an Objective-C object (instance or class) to the Lua interpreter
@@ -456,28 +592,35 @@ int lua_objc_isid(lua_State* state,int stack_index){
 // the Lua execution context.
 //
 
-void lua_objc_pushid(lua_State* state,id object){
+void lua_objc_pushid(lua_State* state,id object)
+{
+#ifndef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
 	lua_newtable(state);
-	lua_objc_setid(state,lua_gettop(state),object);
+#else
+	size_t number_of_bytes = sizeof(LuaUserDataContainer);
+	LuaUserDataContainer* lua_proxy_object = (LuaUserDataContainer*)lua_newuserdata(state, number_of_bytes);
+	lua_proxy_object->theObject = object;
+	// Note: This must be a CFRetain() and not an [object retain] because of
+	// Obj-C 2.0 optional garbage collection.
+	// If a non-Apple Obj-C system is being used, you will need to add additional
+	// #defines to deal with this. But a non-Apple system will have to also deal with
+	// the possibility that the base object doesn't implement retain/release.
+	if([object respondsToSelector:@selector(retain)])
+	{
+		CFRetain(object);
 	}
-	
-//
-// Releases the Objective-C object associated with a Lua value. This is called
-// automatically by Lua when the associated value is garbage-collected.
-// Objective-C objects are only retained if they are instances (i.e. class
-// objects are not retained), and only if the bridge has been compiled with
-// LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES #defined. In this case, instances
-// will be retained every time they are associated with a Lua value using
-// lua_objc_setid(), lua_objc_pushid() or lua_objc_pushpropertylist().
-//
-
-int lua_objc_release(lua_State* state){
-#ifdef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
-	[lua_objc_getid(state,-1) release];
+	else
+	{
+		NSLog(@"Warning in lua_objc_pushid: object doesn't respond to retain: %@", object);
+	}
+//	NSLog(@"lua_objc_pushid (count_after=%d), retained new userdata/object: %@", [lua_proxy_object->theObject retainCount], object);
 #endif
-	return 0;
-	}
-	
+	lua_objc_setid(state,lua_gettop(state),object);
+}
+
+
+
+
 //
 // Associates an Objective-C id with the specified value on the Lua stack.
 // As of Lua v5.1.0, all Lua values can be associated with ObjC values; prior
@@ -497,16 +640,11 @@ void lua_objc_setid(lua_State* state,int stack_index,id object){
 	if(!lua_getmetatable(state,stack_index)){
 		lua_newtable(state);
 		lua_setmetatable(state,stack_index);
-		lua_objc_configuremetatable(state,stack_index,[object respondsToSelector:@selector(retain)]);
+		lua_objc_configuremetatable(state,stack_index);
 		lua_getmetatable(state,stack_index);
 		}
 	metatable=lua_gettop(state);	
 		
-#ifdef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
-	if([object respondsToSelector:@selector(retain)]){
-		[object retain];
-		}
-#endif
 
 	//
 	// Store a reference to the id in the metatable
@@ -732,7 +870,7 @@ void* lua_objc_topointer(lua_State* state,int stack_index){
 // classes: NSArray, NSDictionary, NSString, NSNumber and NSNull.
 //
 
-BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
+BOOL lua_objc_pushpropertylist(lua_State* state,id property_list){
 	BOOL result=YES;
 	int top=lua_gettop(state);
 
@@ -740,30 +878,30 @@ BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
 	// NSNull
 	//
 		 
-	if((propertylist==nil)||([propertylist isKindOfClass:[NSNull class]])){
+	if((property_list==nil)||([property_list isKindOfClass:[NSNull class]])){
 		lua_pushnil(state);
-		lua_objc_setid(state,-1,propertylist);
+		lua_objc_setid(state,-1,property_list);
 		}
 
 	//
 	// NSNumber (includes boolean values)
 	//
 	 
-	else if([propertylist isKindOfClass:[NSNumber class]]){
-		if(strcmp([propertylist objCType],@encode(_Bool))==0)
-			lua_pushboolean(state,[propertylist boolValue]);
+	else if([property_list isKindOfClass:[NSNumber class]]){
+		if(strcmp([property_list objCType],@encode(_Bool))==0)
+			lua_pushboolean(state,[property_list boolValue]);
 		else
-			lua_pushnumber(state,[propertylist doubleValue]);
-		lua_objc_setid(state,-1,propertylist);
+			lua_pushnumber(state,[property_list doubleValue]);
+		lua_objc_setid(state,-1,property_list);
 		}
 
 	//
 	// NSString
 	//
 	 
-	else if([propertylist isKindOfClass:[NSString class]]){
-		lua_pushstring(state,[propertylist UTF8String]);
-		lua_objc_setid(state,-1,propertylist);
+	else if([property_list isKindOfClass:[NSString class]]){
+		lua_pushstring(state,[property_list UTF8String]);
+		lua_objc_setid(state,-1,property_list);
 		}
 
 #ifdef LUA_OBJC_PASS_NSDATA_AS_STRING
@@ -772,9 +910,9 @@ BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
 	// NSData (passed as a string
 	//
 	 
-	else if([propertylist isKindOfClass:[NSData class]]){
-		lua_pushlstring(state,[propertylist bytes],[propertylist length]);
-		lua_objc_setid(state,-1,propertylist);
+	else if([property_list isKindOfClass:[NSData class]]){
+		lua_pushlstring(state,[property_list bytes],[property_list length]);
+		lua_objc_setid(state,-1,property_list);
 		}
 	
 #endif
@@ -783,15 +921,15 @@ BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
 	// NSDictionary
 	//
 	 
-	else if([propertylist isKindOfClass:[NSDictionary class]]){
+	else if([property_list isKindOfClass:[NSDictionary class]]){
 		lua_newtable(state);
-		lua_objc_setid(state,-1,propertylist);
+		lua_objc_setid(state,-1,property_list);
 		int table=lua_gettop(state);
-		NSEnumerator* enumerator=[propertylist keyEnumerator];
+		NSEnumerator* enumerator=[property_list keyEnumerator];
 		id key;
 		while((key=[enumerator nextObject])){
 			lua_objc_pushpropertylist(state,key);
-			if(!lua_objc_pushpropertylist(state,[propertylist valueForKey:key])){
+			if(!lua_objc_pushpropertylist(state,[property_list valueForKey:key])){
 				result=NO;
 				break;
 				}
@@ -803,11 +941,11 @@ BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
 	// NSArray
 	//
 	 
-	else if([propertylist isKindOfClass:[NSArray class]]){
+	else if([property_list isKindOfClass:[NSArray class]]){
 		lua_newtable(state);
-		lua_objc_setid(state,-1,propertylist);
+		lua_objc_setid(state,-1,property_list);
 		int table=lua_gettop(state);
-		NSEnumerator* enumerator=[propertylist objectEnumerator];
+		NSEnumerator* enumerator=[property_list objectEnumerator];
 		id value;
 		lua_Number stack_index;
 		for(stack_index=0;(value=[enumerator nextObject]);stack_index++){
@@ -834,8 +972,95 @@ BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist){
 	if(!result)
 		lua_settop(state,top);
 	return result;
+}
+
+BOOL lua_objc_ispropertylist(lua_State* state, int stack_index)
+{
+
+	if(stack_index<0)
+	{
+		stack_index=lua_gettop(state)+(stack_index+1);
+	}
+	id property_list = lua_objc_toid(state,stack_index);
+
+	if((property_list==nil)||([property_list isKindOfClass:[NSNull class]]))
+	{
+		return YES;
+	}
+	else if([property_list isKindOfClass:[NSNumber class]])
+	{
+		return YES;
+	}
+	else if([property_list isKindOfClass:[NSString class]])
+	{
+		return YES;
 	}
 	
+#ifdef LUA_OBJC_PASS_NSDATA_AS_STRING
+	
+	//
+	// NSData (passed as a string
+	//
+	
+	else if([property_list isKindOfClass:[NSData class]])
+	{
+		return YES;
+	}
+	
+#endif
+	
+	//
+	// NSDictionary
+	//
+	
+	else if([property_list isKindOfClass:[NSDictionary class]])
+	{
+		return YES;
+	}
+	
+	//
+	// NSArray
+	//
+	
+	else if([property_list isKindOfClass:[NSArray class]])
+	{
+		return YES;
+	}
+	else
+	{
+		return NO;
+	}
+}
+		
+
+
+
+
+
+
+
+
+
+
+//
+// Pushes a Cocoa property list onto the Lua stack.
+// This function only operates on a subset of the canonical property list
+// classes: NSArray, NSDictionary, NSString, NSNumber and NSNull.
+//
+
+BOOL lua_objc_pushpropertylist_or_id(lua_State* state,id propertylist_or_id)
+{
+	BOOL result=YES;
+	result = lua_objc_pushpropertylist(state, propertylist_or_id);
+	if(NO == result)
+	{
+		lua_objc_pushid(state, propertylist_or_id);
+	}
+	return result;
+}
+
+
+
 //
 // Converts a given Lua value into its equivalent Cocoa (mutable) property list
 // type. This function only returns a subset of the canonical property list
@@ -858,8 +1083,33 @@ id lua_objc_topropertylist(lua_State* state,int stack_index){
 	//
 	// Convert the value on the top of the stack
 	//
-		
-	id original=lua_objc_toid(state,stack_index);
+	// Ugh. The original code was buggy because it got confused between tables and objects.
+	// I added a workaround for this (below), but my changes to userdata now sem to break
+	// the 'original' check. I don't fully understand it, but I think the system is thinks it's getting objects
+	// when we really shouldn't be. So I think I need to special case the situation or skip it entirely.
+#ifdef LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES
+	id original = nil;
+	if(LUA_TUSERDATA == lua_type(state,stack_index))
+	{
+		if(lua_objc_isid(state,stack_index))
+		{
+			original = lua_objc_toid(state,stack_index);
+//			fprintf(stderr, "we got an object\n" );
+//			NSLog(@"we got an object: %@", original);
+		}
+		else
+		{
+//			NSLog(@"we don't have an object");
+		}
+	}
+	else
+	{
+//		NSLog(@"we don't have an object");
+	}
+#else
+	// This is Tom's original code path:
+	id original = lua_objc_toid(state,stack_index);
+#endif	
 	id result=nil;
 	switch(lua_type(state,stack_index)){
 	
@@ -905,74 +1155,104 @@ id lua_objc_topropertylist(lua_State* state,int stack_index){
 		// Tables
 		//
 		 
-		case LUA_TTABLE:{
-			NSMutableArray* keys=[NSMutableArray array];
-			NSMutableArray* values=[NSMutableArray array];
-			double key;
-			BOOL array=YES;
-			lua_pushnil(state);
-			for(key=1;lua_next(state,stack_index);key++){
-			
-				//
-				// If the Lua Table has so far conformed to the conditions for an array...
-				//
-			
-				if(array){
-			
+		case LUA_TTABLE:
+		{
+			// I added this check for isid because the original code got confused by regular tables and objects
+			// because the implementation did not use userdata.
+			// Note: With my changes to make objects userdata instead of tables,
+			// this check is probably no longer necessary and I might want to add
+			// the LUA_OBJC_RETAIN_AND_RELEASE_INSTANCES flag checks, but I don't
+			// think this code hurts and I haven't tested this as off in the userdata case.
+			if(lua_objc_isid(state,stack_index))
+			{
+				result = lua_objc_toid(state,stack_index);
+//				NSLog(@"in lua_objc_topropertylist, isID: %@", result);
+			}
+			else
+			{
+				NSMutableArray* keys=[NSMutableArray array];
+				NSMutableArray* values=[NSMutableArray array];
+				double key;
+				BOOL array=YES;
+				lua_pushnil(state);
+				for(key=1;lua_next(state,stack_index);key++){
+					
 					//
-					// ..but this key either not a number, or not the number we expect..
+					// If the Lua Table has so far conformed to the conditions for an array...
 					//
 					
-					if((lua_type(state,-2)!=LUA_TNUMBER)||(key!=lua_tonumber(state,-2))){
-					
-						//
-						// ..nor is it the "n" key accompanied by a number indicating the size of the array...
-						//
-				
-						if((lua_type(state,-2)!=LUA_TSTRING)||(strcmp(lua_tostring(state,-2),"n")!=0)||(lua_type(state,-1)!=LUA_TNUMBER)){
+					if(array){
 						
+						//
+						// ..but this key either not a number, or not the number we expect..
+						//
+						if((lua_type(state,-2)!=LUA_TNUMBER)||(key!=lua_tonumber(state,-2))){
+							
 							//
-							// ..then this table is not an array, it's a dictionary.
+							// ..nor is it the "n" key accompanied by a number indicating the size of the array...
 							//
-						
-							array=NO;
+							
+							if((lua_type(state,-2)!=LUA_TSTRING)||(strcmp(lua_tostring(state,-2),"n")!=0)||(lua_type(state,-1)!=LUA_TNUMBER)){
+								
+								//
+								// ..then this table is not an array, it's a dictionary.
+								//
+								
+								array=NO;
 							}
-						else{
-						
-							//
-							// If it *is* an array, however, we don't want to insert the Lua-internal "n" element into the ObjC array, since it just gives the array length
-							//
-						
-							key=0.0;
+							else{
+								
+								//
+								// If it *is* an array, however, we don't want to insert the Lua-internal "n" element into the ObjC array, since it just gives the array length
+								//
+								
+								key=0.0;
 							}
 						}
 					}
 					
-				//	
-				// Update the ObjC values we've been storing
-				//
-				
-				if(key){
-					[values addObject:lua_objc_topropertylist(state,-1)];
-					[keys addObject:lua_objc_topropertylist(state,-2)];
+					//	
+					// Update the ObjC values we've been storing
+					//
+					
+					if(key){
+						[values addObject:lua_objc_topropertylist(state,-1)];
+						[keys addObject:lua_objc_topropertylist(state,-2)];
+//						NSLog(@"keys=%@", keys);
+//						NSLog(@"values=%@", values);
+						
 					}
-				lua_pop(state,1);
+					lua_pop(state,1);
 				}
-			if(array){
-				result=values;
+				if(array){
+					result=values;
 				}
-			else{
-				result=[NSMutableDictionary dictionaryWithObjects:values forKeys:keys];
+				else{
+					result=[NSMutableDictionary dictionaryWithObjects:values forKeys:keys];
 				}
-			break;
 			}
-	
+			break;
+		}
+		
+			
+		case LUA_TUSERDATA:
+		{
+			if(lua_objc_isid(state,stack_index))
+			{
+				result = lua_objc_toid(state,stack_index);
+			}
+			else
+			{
+				NSLog(@"Warning: Got LUA_TUSERDATA in propertylist, but the userdata is not an NSObject. We currently don't know how to convert. Remember that NSArrays and NSDictionaries need to box non-object types.");
+				result = [NSNull null];
+			}
+			break;
+		}
 		//
 		// All other Lua types are treated as Null values
 		//
 		 
 		case LUA_TFUNCTION:
-		case LUA_TUSERDATA:
 		case LUA_TNIL:
 		case LUA_TTHREAD:
 		case LUA_TLIGHTUSERDATA:
@@ -985,12 +1265,15 @@ id lua_objc_topropertylist(lua_State* state,int stack_index){
 	//
 	// Return the original object if its value hasn't been changed by the Lua script
 	//
-		
-	if([result isEqual:original]){
-		result=original;
+	// I added a check for nil, now that I changed things around for userdata.
+	if(nil != original)
+	{
+		if([result isEqual:original]){
+			result=original;
 		}
-	return result;
 	}
+	return result;
+}
 	
 //
 // Lua Instance Table Value Manipulation
@@ -1253,6 +1536,12 @@ int lua_objc_methodcall(lua_State* state){
 #else
 	argumentCount=method_getNumberOfArguments(method);
 	argumentSize=method_getSizeOfArguments(method);
+//NSLog(@"argumentCount=%d, argumentSize=%d",argumentCount,argumentSize );
+	if(0==argumentSize)
+	{
+		NSLog(@"Unexpected Error in LuaObjCBridge: argumentSize is 0");
+		argumentSize = sizeof(void*) * argumentCount;
+	}
 	marg_malloc(argumentList,method);
 	if(!argumentList){
 		lua_objc_methodcall_error("Unable to allocate method argument buffer.");
@@ -1692,9 +1981,20 @@ int lua_objc_methodcall(lua_State* state){
 			case LUA_OBJC_TYPE_POINTER:{
 				if(lua_isuserdata(state,luaArgument)){
 #ifndef LUA_OBJC_USE_RUNTIME_INSTEAD_OF_FOUNDATION
+	#ifndef LUA_OBJC_USE_FULLUSERDATA_FOR_POINTER_TYPES
 					lua_objc_methodcall_setArgumentValue(void*,lua_touserdata(state,luaArgument));
+	#else
+					#warning "Foundation Ful Userdata for Pointer Types is untested"
+					void** user_data = (void**)lua_touserdata(state,luaArgument);
+					lua_objc_methodcall_setArgumentValue(void*,*user_data);
+	#endif
 #else
+	#ifndef LUA_OBJC_USE_FULLUSERDATA_FOR_POINTER_TYPES
 					marg_setValue(argumentList,argumentOffset,void*,lua_touserdata(state,luaArgument));
+	#else
+					void** user_data = (void**)lua_touserdata(state,luaArgument);
+					marg_setValue(argumentList,argumentOffset,void*,*user_data);
+	#endif
 #endif
 					}
 				else{
@@ -1919,6 +2219,45 @@ int lua_objc_methodcall(lua_State* state){
 				if(!(lua_objc_pushpropertylist(state,resultValue)))
 					lua_objc_pushid(state,resultValue);
 #endif
+#ifdef LUA_OBJC_DECREMENT_ON_ALLOC_OR_COPY_TO_RELY_ON_LUA_GC
+				// These are the methods I found discussed on the PyObjC mailing list
+				// that warrant exceptions. From 2005-10, msg 72 by Ronald Oussoren.
+				// I think we also need 'new', though the message sounds like there 
+				// may be some fundamental problems with it.
+				// If problems occur, new should be removed and documented.
+				if( (0 == strcmp(selectorName, "alloc"))
+				   || 0 == strcmp(selectorName, "allocWithZone:")
+				   || 0 == strcmp(selectorName, "copy")
+				   || 0 == strcmp(selectorName, "copyWithZone:")
+				   || 0 == strcmp(selectorName, "mutableCopy")
+				   || 0 == strcmp(selectorName, "mutableCopyWithZone:")
+				   || 0 == strcmp(selectorName, "new")
+				)
+				{
+					// Unlike elsewhere, we use release instead of CFRelease
+					// because in this case, we are not trying to cancel-out
+					// the CFRetain used by lua_objc_pushid which keeps the
+					// pointer alive under objc-gc, but cancel-out the extra
+					// ref-increment caused by the above methods.
+					// Under objc-gc, we only want to use release knowing
+					// it is a no-op. Otherwise, we could accidentally decrement
+					// the ref-count with CFRelease which is the only thing
+					// preventing the objc-gc system from collecting an object
+					// out from Lua.
+					// I thought about autorelease, but I think release is better
+					// because I'm guaranteed to still have an object because of the 
+					// CFRetain stuff I do, and I don't have to worry about autorelease pools.
+					if([(id)resultValue respondsToSelector:@selector(release)])
+					{
+						[(id)resultValue release];
+					}
+					else
+					{
+						NSLog(@"Warning in lua_objc_methodcall: object does not respond to release");
+					}
+				}
+#endif				
+				
 				break;
 				}
 			case LUA_OBJC_TYPE_CLASS:{
@@ -1939,9 +2278,22 @@ int lua_objc_methodcall(lua_State* state){
 				}
 			case LUA_OBJC_TYPE_POINTER:{
 #ifndef LUA_OBJC_USE_RUNTIME_INSTEAD_OF_FOUNDATION
+	#ifndef LUA_OBJC_USE_FULLUSERDATA_FOR_POINTER_TYPES
 				lua_pushlightuserdata(state,(id)(*((void**)resultValue)));
+	#else
+				#warning "Foundation Ful Userdata for Pointer Types is untested"
+				void** the_result = (void**)lua_newuserdata(state, sizeof(void*));
+				// Not sure if I'm copying the correct dereferencing.
+				memcpy(*the_result, *resultValue);
+	#endif
 #else
+	#ifndef LUA_OBJC_USE_FULLUSERDATA_FOR_POINTER_TYPES
 				lua_pushlightuserdata(state,((lua_objc_pointer_msgSendv)objc_msgSendv)(receiver,selector,argumentSize,argumentList));
+	#else
+				void** the_result = (void**)lua_newuserdata(state, sizeof(void*));
+				*the_result = ((lua_objc_pointer_msgSendv)objc_msgSendv)(receiver,selector,argumentSize,argumentList);
+	#endif
+
 #endif
 				break;
 				}
@@ -1956,19 +2308,59 @@ int lua_objc_methodcall(lua_State* state){
 				memcpy(temp,resultValue,resultSize);
 #else
 				char* resultType=method->method_types;
-				int resultSize=lua_objc_type_size(&resultType);
+				// HACK: I changed the lua_objc_type_size() code path to essentially use the FOUNDATION version for structs because 
+				// resultSize was returning 0 for size>8 and resultType seemed to be empty or garbage. This seemed to be 
+				// true on both PPC and Intel, though I didn't test the PPC as much so my memory may be hazy.
+				//
+//				int resultSize=lua_objc_type_size(&resultType);
+				unsigned resultSize=lua_objc_type_size(&resultType);
 				resultValue=lua_newuserdata(state,resultSize);
+//				fprintf(stderr, "resultSize=%d, resultValue=%x, resultType=%s\n", resultSize, resultValue, resultType);
 				bzero(resultValue,resultSize);
+//				fprintf(stderr, "LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY");
+
+
+
+//				fprintf(stderr, "sizeof arglist=%d, argSize=%d\n", sizeof(argumentList), argumentSize);
+
+				// So I think Tom's code is slightly wrong. According to a blog entry found here:
+				// http://www.dpompa.com/?p=14
+				// which is a follow up to "objc_msgSendv_stret - wtf?!",
+				// objc_msgSendv_stret must reserve space at the beginning of the argument list which
+				// will be used to place the struct return value in.
+				// To accomplish this, I malloc a new buffer which is the size of the argument list + the size of the return struct.
+				// I copy the argument list to the end of the buffer (leaving space at the beginning of the list for the return value.)
+				// Then I make sure to call objc_msgSendv_stret with pointer to the new buffer as both the first and last parameter.
+				void* new_arg_list = malloc(resultSize + argumentSize);
+				bzero(new_arg_list, argumentSize + resultSize); // probably don't need to zero out
+				char* offset_ptr = (char*)new_arg_list + resultSize; // set the pointer past the space for the return struct
+				memcpy(offset_ptr, argumentList, argumentSize); // copy the arg list at the end of the buffer
+				
 	#ifdef LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY
-				if(resultSize<LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY_LIMIT){
+				// FIX: Should be <=, and not just <
+				if(resultSize<=LUA_OBJC_METHODCALL_RETURN_STRUCTS_DIRECTLY_LIMIT)
+				{
 					*((lua_objc_methodcall_struct_result*)resultValue)=((lua_objc_struct_msgSendv)objc_msgSendv)(receiver,selector,argumentSize,argumentList);
-					}
-				else{
-					objc_msgSendv_stret(resultValue,receiver,selector,argumentSize,argumentList);
-					}
+				}
+				else
+				{
+					//objc_msgSendv_stret(resultValue,receiver,selector,argumentSize,argumentList);
+					objc_msgSendv_stret(new_arg_list,receiver,selector,argumentSize,new_arg_list);
+
+
+//					fprintf(stderr, "doing offset arglist\n");
+					memcpy(resultValue, new_arg_list, resultSize);
+//					CGRect* the_rect = (CGRect*)resultValue;
+//					fprintf(stderr, "the_rect2: %f, %f, %f, %f\n", the_rect->origin.x, the_rect->origin.y, the_rect->size.width, the_rect->size.height);
+				}
 	#else
-				objc_msgSendv_stret(resultValue,receiver,selector,argumentSize,argumentList);
+//				objc_msgSendv_stret(resultValue,receiver,selector,argumentSize,argumentList);
+				objc_msgSendv_stret(new_arg_list,receiver,selector,argumentSize,new_arg_list);
+				memcpy(resultValue, new_arg_list, resultSize);
 	#endif
+
+			free(new_arg_list); // remember to free the expanded buffer
+
 #endif
 				break;
 				}
@@ -2423,6 +2815,18 @@ unsigned lua_objc_type_size(char** type_encoding){
 				break;
 				}
 			case LUA_OBJC_TYPE_STRUCT:{
+			
+				// HACK: I changed the lua_objc_type_size() code path to essentially use the FOUNDATION version for structs because 
+				// resultSize was returning 0 for size>8 and resultType seemed to be empty or garbage. This seemed to be 
+				// true on both PPC and Intel, though I didn't test the PPC as much so my memory may be hazy.
+				// Also, I think there was a problem with structs of <=8 because there were also crashes.
+				// I didn't understand the code, so it was easier to copy the FOUNDATION version here which was nice and short.
+				#if 1
+				unsigned u_result = 0;
+				*type_encoding=(char*)NSGetSizeAndAlignment(*type_encoding,&u_result,NULL);
+//				fprintf(stderr, "result=%d, type_encoding=%s\n", u_result, *type_encoding);
+				return u_result;
+				#else
 				unsigned max_alignment=0;
 				unsigned padding;
 				char* temp;
@@ -2464,7 +2868,10 @@ unsigned lua_objc_type_size(char** type_encoding){
 					result=result+padding;
 					lua_objc_type_skip_past_char(type,LUA_OBJC_TYPE_STRUCT_END);
 					}
+				//fprintf(stderr, "result=%d, type_encoding=%s\n", result, *type_encoding);
+
 				break;
+				#endif
 				}
 			case LUA_OBJC_TYPE_UNKNOWN:
 			default:

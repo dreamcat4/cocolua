@@ -12,11 +12,20 @@
 @interface MyController ()
 
 - (NSString*)runScript:(NSString*)scriptPath withArgument:(NSString*)data;
+- (void)acceptResult:(NSObject*)result;
 
 @end
 
 
 @implementation MyController
+
+- (id) init {
+	self = [super init];
+	if (self != nil) {
+	}
+	return self;
+}
+
 
 - (IBAction)doItButtonClicked:(id)sender {
 	NSBundle * bundle = [NSBundle bundleForClass:[MyController class]];
@@ -25,7 +34,9 @@
 		[textView setString:@"Failed to get script's path."];
 		return;
 	}
-	[textView setString:[self runScript:scriptPath withArgument:[textView string]]];
+	scriptResult = @"Script hasn't set anything.";
+	NSString * runResult = [self runScript:scriptPath withArgument:[textView string]];
+	[textView setString:[NSString stringWithFormat:@"Run result: %@\nScript result: %@\n", runResult, (scriptPath?[scriptResult description]:@"nil")]];
 }
 
 - (NSString*)runScript:(NSString*)scriptPath withArgument:(NSString*)data {
@@ -38,6 +49,9 @@
 	// Pass input parameters into Lua
 	lua_objc_pushpropertylist( interpreter, data );
 	lua_setglobal( interpreter, "argument" );        // This will be the name in Lua
+	
+	lua_objc_pushid(interpreter, self);	
+	lua_setglobal(interpreter, "resultAcceptor");
 	
 	// Use Lua to run a script
 	luaL_dofile( interpreter, [ scriptPath UTF8String ] );
@@ -74,6 +88,10 @@
 	lua_close(interpreter);                    
 	
 	return result;
+}
+
+- (void)acceptResult:(NSObject*)result {
+	scriptResult = result;
 }
 
 @end

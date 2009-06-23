@@ -16,6 +16,7 @@
 
 extern lua_State* lua_objc_init();
 extern int lua_objc_open(lua_State* state);
+extern int luaopen_objc(lua_State* the_state);
 
 #ifdef __OBJC__
 	#import <Foundation/Foundation.h>
@@ -29,11 +30,20 @@ extern int lua_objc_open(lua_State* state);
 extern id lua_objc_getid(lua_State* state,int stack_index);
 extern void lua_objc_pushid(lua_State* state,id object);
 extern int lua_objc_isid(lua_State* state,int stack_index);
+
+int lua_objc_isObject(lua_State* state); // objc.isObject is Lua interface to query
+
+
 extern void lua_objc_setid(lua_State* state,int stack_index,id object);
 extern id lua_objc_toid(lua_State* state,int stack_index);
 
 extern BOOL lua_objc_pushpropertylist(lua_State* state,id propertylist);
 extern id lua_objc_topropertylist(lua_State* state,int stack_index);
+
+// If property-list (NSNull, NSNumber, NSString, NSDictionary, NSArray), push as property-list (offering bridge conversion)
+// otherwise, push as generic Obj-C object.
+extern BOOL lua_objc_pushpropertylist_or_id(lua_State* state,id propertylist_or_id);
+extern BOOL lua_objc_ispropertylist(lua_State* state, int stack_index);
 
 extern int lua_objc_pushautoreleasepool(lua_State* state);
 
@@ -49,7 +59,7 @@ extern unsigned lua_objc_type_size(char** typeptr);
 //
 //
 
-extern void lua_objc_configuremetatable(lua_State* state, int stack_index,int hook_gc_events);
+extern void lua_objc_configuremetatable(lua_State* state, int stack_index);
 extern void* lua_objc_topointer(lua_State* state,int stack_index);
 
 //
@@ -61,6 +71,6 @@ extern void* lua_objc_topointer(lua_State* state,int stack_index);
 extern int lua_objc_lookup_class(lua_State* state);
 extern int lua_objc_methodcall(lua_State* state);
 extern int lua_objc_methodlookup(lua_State* state);
-extern int lua_objc_release(lua_State* state);
+//extern int lua_objc_release(lua_State* state);
 
 #endif

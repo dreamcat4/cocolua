@@ -1,1 +1,3 @@
-result = string.format("argument = %s", argument)
+resultAcceptor:acceptResult("wow")
+resultAcceptor = nil
+result = "Done"

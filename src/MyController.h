@@ -11,6 +11,8 @@
 
 @interface MyController : NSObject {
 	IBOutlet NSTextView * textView;
+	
+	NSObject * scriptResult;
 }
 
 - (IBAction)doItButtonClicked:(id)sender;
